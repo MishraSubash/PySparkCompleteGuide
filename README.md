@@ -1,4 +1,4 @@
-#*PySpark For AWS Glue*
+# *PySpark For AWS Glue*
 
 ### Step 1: Use CloudFormation template to create AWS resources to complete this practice. CF template will create S3 Bucket, Glue Tables, IAM roles with necessary permissions. 
 
