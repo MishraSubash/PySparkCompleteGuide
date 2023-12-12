@@ -167,3 +167,242 @@ Catalyst optimizer takes a computational query and converts it into an execution
     The final phase of query optimization involves generating efficient Java bytecode to run on each machine. Because Spark SQL can operate on data sets loaded in memory, Spark can use state-of-the-art compiler technology for code generation to speed up execution. In other words, it acts as a compiler. Project Tungsten, which facilitates whole-stage code generation, plays a role here.
 
 ## Spark SQL and DataFrames: Introduction to Built-in Data Sources
+
+########### Add More Files #### 
+
+### SQL Tables and Views
+Spark allows you to create two types of tables
+
+- Managed Tables:  Spark manages both the metadata and the data in the file store. This could be a local filesystem, HDFS, or an object store such as Amazon S3 or Azure Blob. It means create Table, DB and Schema from within Spark Session using CREATE Statement.
+- Unmanaged Table:  Spark only manages the metadata, while you manage the data yourself in an external data source. It means fetching data from external source let's say from 3rd partly SQL using SELECT statement.
+
+Writing a DataFrame to a SQL table is as easy as writing to a file—just use ```saveAsTable()``` instead of ```save()```. This will create a managed table called ```sql_table```
+ For example, In Python:
+  ```df.write.mode("overwrite").saveAsTable("sql_table"))```
+
+**Some commonly used Windows function in SQL and its equivalent Spark DataFrame API**
+
+|  |SQL|DataFrame API |
+|---|----|------|
+|Ranking Functions | ```rank()```| ```rank()```|
+| |```dense_rank()``` |```denseRank()```|
+| |```percent_rank()```| ```percentRank()```|
+| |```ntile()``` | ```ntile()```|
+| |```row_number()``` | ```rowNumber()``` |
+|Analytic functions |```cume_dist()``` |```cumeDist()```|
+| |```first_value()```| ```firstValue()```|
+| |```last_value()```| ```lastValue()```|
+| |```lag()``` |```lag()```|
+| |```lead()``` | ```lead()```|
+
+### Structured Streaming 
+## Page 232
+Stream processing is defined as the continuous processing of endless streams of data.
+With the advent of big data, stream processing systems transitioned from single-node
+processing engines to multiple-node, distributed processing engines.
+
+**Advantages of DStreams**
+- Spark’s agile task scheduling can very quickly and efficiently recover from failures and straggler executors by rescheduling one or more copies of the tasks on any of the other executors.
+- The deterministic nature of the tasks ensures that the output data is the same no matter how many times the task is reexecuted. This crucial characteristic enables Spark Streaming to provide end-to-end exactly-once processing guarantees, that is, the generated output results will be such that every input record was processed exactly once.
+
+The DStream API was built upon Spark’s batch RDD API. Therefore, DStreams had the same functional semantics and fault-tolerance model as RDDs. 
+
+## The Fundamentals of a Structured Streaming Query
+**Five Steps to Define a Streaming Query**
+
+- **Step 1: Define input sources**
+```spark = SparkSession...
+lines = (spark
+ .readStream.format("socket")
+ .option("host", "localhost")
+ .option("port", 9999)
+ .load())
+ ```
+ 
+```readStream.format("socket")``` it is indicating that the data is being read from a TCP socket as a streaming source.
+
+- **Step 2: Transform Data**
+DataFrame operations that can be applied on a batch DataFrame can also be applied on a streaming DataFrame. To understand which operations are supported in Structured Streaming, you have to recognize the two broad classes of data transformations:
+*Stateless transformations*: 
+    Operations like select(), filter(), map(), etc. do not require any information from previous rows to process the next row; each row can be processed by itself. The lack of previous “state” in these operations make them stateless. Stateless operations can be applied to both batch and streaming DataFrames.
+
+*Stateful transformations*:
+In contrast, an aggregation operation like count() requires maintaining state to combine data across multiple rows. More specifically, any DataFrame operations involving grouping, joining, or aggregating are stateful transformations. While many of these operations are supported in Structured Streaming, a few combinations of them are not supported because it is either computationally hard or infeasible to compute them in an incremental manner.
+
+- **Step 3: Define output sink and output mode**
+After transforming the data, we can define how to write the processed output data with ```DataFrame.writeStream``` (instead of ```DataFrame.write```, used for batch data).
+This creates a ```DataStreamWriter``` which, similar to ```DataFrameWriter```, has additional
+methods to specify the following:
+    - Output writing details (where and how to write the output)
+    - Processing details (how to process data and how to recover from failures)
+**In Python**
+```writer = counts.writeStream.format("console").outputMode("complete")```
+
+**```outputMode```** can take either of ```append``` (new data rows added to the existing Data), ```complete``` (complete write from scratch), and ```update``` (only the rows of the result table/DataFrame that were updated since the last trigger will be output at the end of every trigger. Like SQL update; update the data based on key ID or other identifier. 
+
+- **Step 4: Specify processing details**
+Schduling how often the query run and of how to process the data. 
+For instance, In Python
+```
+checkpointDir = "..."
+writer2 = (writer
+ .trigger(processingTime="1 second")
+ .option("checkpointLocation", checkpointDir))
+```
+
+**```trigger()``` options**: 
+ - **Default**: By default, the streaming query executes data in micro-batches where the next micro-batch is triggered as soon as the previous micro-batch has completed. 
+ - **Processing time with trigger interval**: Query will trigger micro-batches at that fixed interval. 
+ - **Once**:  Streaming query will execute exactly one micro-batch—it processes all the new data available in a single batch and then stops itself. This is useful when you want to control the triggering and processing from an external scheduler that will restart the query using any custom schedule
+- **Continuous**: streaming query will process data continuously instead of in micro-batches. While only a small subset of DataFrame operations allow this mode to be used, it can provide much lower latency (as low as milliseconds) than the micro-batch trigger modes. 
+    (*This is an experimental mode as of Spark 3.0*)
+
+**Checkpoint location**: This is a directory in any HDFS-compatible filesystem where a streaming query
+saves its progress information—that is, what data has been successfully processed. Upon failure, this metadata is used to restart the failed query exactly where it left off. Therefore, setting this option is necessary for failure recovery with exactly-once guarantees.
+
+- **Step 5: Start the query:** 
+Once everything has been specified, the final step is to start the query, which you can do with the following:
+In Python: 
+    
+```streamingQuery = writer2.start()```
+
+Note: start() is a nonblocking method, so it will return as soon as the query has started in the background. If you want the main thread to block until the streaming query has terminated, you can use ```streamingQuery.awaitTermination()```. If the query fails in the background with an error, ```awaitTermination()``` will also fail with that same exception. 
+
+**Putting it all together** 
+
+*This query will count the words of the source data.* 
+
+```
+from pyspark.sql.functions import *
+spark = SparkSession...
+lines = (spark
+ .readStream.format("socket")
+ .option("host", "localhost")
+ .option("port", 9999)
+ .load())
+words = lines.select(split(col("value"), "\\s").alias("word"))
+counts = words.groupBy("word").count()
+checkpointDir = "..."
+streamingQuery = (counts
+ .writeStream
+ .format("console")
+ .outputMode("complete")
+ .trigger(processingTime="1 second")
+ .option("checkpointLocation", checkpointDir)
+ .start())
+streamingQuery.awaitTermination()
+```
+### Under the Hood of an Active Streaming Query
+
+######### pic 8-9 page 244 ####
+
+*Under the hoold of Structured Streaming, it uses Spark SQL to execute the data. As such, the full power of Spark SQL's hyperoptimized execution engine is utilized to maximize the stream processing throughput, providing key performance advantages.* 
+
+**Recovering from Failures with Exactly-Once Guarantees**
+The checkpoint location must not be changed between restarts because this directory contains the unique identity of a streaming query and determines the life cycle of the query. If the checkpoint directory is deleted or the same query is started with a different checkpoint directory, it is like starting a new query from scratch. However, other details like trigger interval, making minor modifications to the transformations between restarts such as filter out corrupted byte data or files can be changed without
+breaking fault-tolerance guarantees.
+
+**Health Check of Active Query**
+Structured Streaming provides several ways to track the status and processing metrics of an active query.
+- **Get current metrics using ```StreamingQuery```**: When a query processes some data in a micro-batch, we consider it to have made some progress. lastProgress() returns information on the last completed micro batch.
+
+```StreamingQuery.lastProgress()```
+```
+{
+ "id" : "ce011fdc-8762-4dcb-84eb-a77333e28109",
+ "runId" : "88e2ff94-ede0-45a8-b687-6316fbef529a",
+ "name" : "MyQuery",
+ "timestamp" : "2016-12-14T18:45:24.873Z",
+ "numInputRows" : 10,
+ "inputRowsPerSecond" : 120.0,
+ "processedRowsPerSecond" : 200.0,
+ "durationMs" : {
+ "triggerExecution" : 3,
+ "getOffset" : 2
+ },
+ "stateOperators" : [ ],
+ "sources" : [ {
+ "description" : "KafkaSource[Subscribe[topic-0]]",
+ "startOffset" : {
+ "topic-0" : {
+ "2" : 0,
+ "1" : 1,
+ "0" : 1
+ }
+ },
+ "endOffset" : {
+ "topic-0" : {
+ "2" : 0,
+ "1" : 134,
+ "0" : 534
+ }
+ },
+ "numInputRows" : 10,
+ "inputRowsPerSecond" : 120.0,
+ "processedRowsPerSecond" : 200.0
+  } ],
+ "sink" : {
+ "description" : "MemorySink"
+ }
+}
+```
+```id```: Unique identifier tied to a checkpoint location. This stays the same throughout the lifetime of a query (i.e., across restarts). 
+
+```runId```: Unique identifier for the current (re)started instance of the query. This changes with every restart.
+
+```numInputRows```: Number of input rows that were processed in the last micro-batch.
+
+```inputRowsPerSecond```: Current rate at which input rows are being generated at the source (average over the last micro-batch duration)
+
+```processedRowsPerSecond```: Current rate at which rows are being processed and written out by the sink (aver‐ age over the last micro-batch duration). If this rate is consistently lower than the input rate, then the query is unable to process data as fast as it is being generated by the source. This is a key indicator of the health of the query.
+
+- **Get current status using ```StreamingQuery.status()```**. This provides information on what the background query thread is doing at this moment. For example, printing the returned object will produce something like this:
+```
+{
+ "message" : "Waiting for data to arrive",
+ "isDataAvailable" : false,
+ "isTriggerActive" : false
+}
+```
+### Options to write data to any storage system
+- **Writing Options**: There are two operations that allow you to write the output of a streaming query to arbitrary storage systems: ```foreachBatch()``` and ```foreach()```. They have slightly different use cases: while ```foreach()``` allows custom write logic on every row, ```foreachBatch()``` allows arbitrary operations and custom logic on the output of each microbatch.
+
+- **Write to multiple locations**: If you want to write the output of a streaming query to multiple locations (e.g., an OLAP data warehouse and an OLTP database), then you can simply write the output DataFrame/Dataset multiple times. However, each attempt to write can cause the output data to be recomputed (including possible rereading of the input data). To avoid recomputations, you should cache the ```batchOutputDataFrame```, write it to multiple locations, and then uncache it:
+
+```
+def writeCountsToMultipleLocations(updatedCountsDF, batchId):
+ updatedCountsDF.persist()
+ updatedCountsDF.write.format(...).save() # Location 1
+ updatedCountsDF.write.format(...).save() # Location 2
+ updatedCountsDF.unpersist()
+Frames.unt())
+```
+
+## Incremental Execution and Streaming State
+Structured Streaming can incrementally execute most DataFrame aggregation operations. You can aggregate data by keys (e.g., streaming word count) and/or by time (e.g., count records received every hour)
+
+### Aggregations Not Based on Time
+Aggregations not involving time can be broadly classified into two categories:
+
+- Global aggregations: Aggregations across all the data in the stream. For example, say you have a stream of sensor readings as a streaming DataFrame named sensorReadings. You can calculate the running count of the total number of readings received with the following query:
+```
+runningCount = sensorReadings.groupBy().count()
+```
+***You cannot use direct aggregation operations like ```DataFrame.count()``` and ```Dataset.reduce()``` on streaming DataFrames. This is because, for static DataFrames, these operations immediately return the final computed aggregates, whereas for streaming DataFrames the aggregates have to be continuously updated. Therefore, you have to always use ```DataFrame.groupBy()``` or ```Dataset.groupByKey()```
+for aggregations on streaming DataFrames.***
+
+- Grouped aggregations: Aggregations within each group or key present in the data stream.
+```baselineValues = sensorReadings.groupBy("sensorId").mean("value")```
+
+*All built-in aggregation functions*
+- ```sum()```
+- ```mean()```
+- ```stdev()```
+- ```countDistinct()```
+- ```collect_set()```
+- ```approx_count_distinct()```
+
+mean("value"))s))es())s)))
+
+
+
