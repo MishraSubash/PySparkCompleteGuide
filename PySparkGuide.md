@@ -548,13 +548,13 @@ clickTime BETWEEN impressionTime AND impressionTime + interval 1 hour""")))
     - Running multiple streaming queries in the same SparkContext or SparkSession can lead to fine-grained resource sharing. Executing too many continuosuly running queries will consumes resources in the Spark driver. So, Hitting those limits can either bottleneck the task scheduling (i.e., underutilizing the executors) or exceed memory limits. 
     - ensuring fairer resource allocation between queries in the same context by setting them to run in separate scheduler pools. Set the ```SparkContext```’s thread-local property spark.scheduler.pool to a different string value for each stream:
     
-    **Run streaming query1 in scheduler pool1**
+**Run streaming query1 in scheduler pool1**
 ```
 spark.sparkContext.setLocalProperty("spark.scheduler.pool", "pool1")
 df.writeStream.queryName("query1").format("parquet").start(path1)
 ```
 
-    **Run streaming query2 in scheduler pool2**
+**Run streaming query2 in scheduler pool2**
 ```
 spark.sparkContext.setLocalProperty("spark.scheduler.pool", "pool2")
 df.writeStream.queryName("query2").format("parquet").start(path2)
