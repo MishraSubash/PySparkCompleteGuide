@@ -34,8 +34,16 @@ where data from other partitions is read in, combined, and written to disk.  a c
 ***How Spark maintains fault tolerance?***
 **Ans**: While lazy evaluation allows Spark to optimize your queries by peeking into your chained transformations, lineage and data immutability provide fault tolerance. Because Spark records each transformation in its lineage and the DataFrames are immutable between transformations, it can reproduce its original state by simply replaying the recorded lineage, giving it resiliency in the event of failures.
 
-######### PICTURE ####### page 29 2-1 ###
+| Transformations | Actions| 
+|--------|-----|
+|orderBy() | show()|
+|groupBY() | take()|
+|filter() | count()|
+|select() | collect()|
+|join() | save()|
 
+***Lazy transformations and eager actions***
+INSERT IMAGE1 ######### PICTURE ####### page 29 2-1 ###
 **Nothing in a query plan is executed until an action is invoked**
 
 
@@ -160,7 +168,50 @@ Catalyst optimizer takes a computational query and converts it into an execution
     The final phase of query optimization involves generating efficient Java bytecode to run on each machine. Because Spark SQL can operate on data sets loaded in memory, Spark can use state-of-the-art compiler technology for code generation to speed up execution. In other words, it acts as a compiler. Project Tungsten, which facilitates whole-stage code generation, plays a role here.
 
 ## Spark SQL and DataFrames: Introduction to Built-in Data Sources
+```
+from pyspark.sql import SparkSession
+# This a local computer custer so always have one cluster
+spark = SparkSession.builder.appName('pysparkTest').getOrCreate()
 
+# Read and create a temporary view
+# Imput dataset
+df = spark.read.csv('tips.csv', header = True, inferSchema = True)
+df.createOrReplaceTempView("tips_tbl")
+df.printSchema()
+```
+Insert Image2
+```
+# Let's try sql to query the tips data 
+spark.sql("""SELECT * FROM tips_tbl""").show(5)
+```
+Insert image3
+```
+# With Group by 
+spark.sql("""SELECT sex, SUM(total_bill) AS Bill
+            FROM tips_tbl 
+            WHERE time <> 'Dinner'
+            GROUP BY sex
+            """).show()
+```
+INSERT IMage 4
+
+```
+# Little bit advance query 
+spark.sql("""SELECT sex as Gender, day, 
+           
+           -- When variable name is introduced it has to be in quote as shown in CASE WHEN Statement                  
+            CASE 
+                WHEN size = 2 THEN 'Couple' 
+                WHEN size = 3 THEN 'NuclearFamily'
+                WHEN size >= 4 THEN 'Gathering'
+                ELSE 'SinglePerson'
+            END AS CustomerType, 
+            ROUND(SUM(total_bill), 2) AS BillTotal  
+            FROM tips_tbl 
+            GROUP BY sex, size, day
+            ORDER BY day ASC""").show(5)
+```
+INSERT Image5
 ########### Add More Files #### 
 
 ### SQL Tables and Views
@@ -286,7 +337,7 @@ streamingQuery = (counts
 streamingQuery.awaitTermination()
 ```
 ### Under the Hood of an Active Streaming Query
-
+INSERT IMAGE 6
 ######### pic 8-9 page 244 ####
 
 *Under the hoold of Structured Streaming, it uses Spark SQL to execute the data. As such, the full power of Spark SQL's hyperoptimized execution engine is utilized to maximize the stream processing throughput, providing key performance advantages.* 
@@ -395,8 +446,6 @@ for aggregations on streaming DataFrames.***
 - ```collect_set()```
 - ```approx_count_distinct()```
 
-mean("value"))s))es())s)))
-
 Multiple aggregations can be computed together
 ```from pyspark.sql.functions import * 
 multipleAggs = (sensorReadings
@@ -430,7 +479,6 @@ A watermark is defined as a moving threshold in event time that trails behind th
 ```
 
 ### Streaming Joins
-page 270
 Structured Streaming supports joining a streaming Dataset with another static or streaming Dataset. Watermarks can be used to limit the state stored for stateful  join (inner, outer, etc)
 
 **Stream-Static Joins**
@@ -441,14 +489,12 @@ on the specific behavior of the data source. For example, if the static Da aF am
 was defined on files, then changes to those files (e.g., appen s) will not b  p cked
 up until the streaming queready.y is r
 
-Read static data 
-``` staticdata = spark.read...```
-Read Streamming data 
-```streamdata = spark.readstream ...```
-Joining data 
-```
-mergedata = streamdata.join(staticdata , "id")
-```
+Read static data: ``` staticdata = spark.read...```
+
+Read Streamming data: ```streamdata = spark.readstream ...```
+
+Joining data:  ```mergedata = streamdata.join(staticdata , "id")```
+
 **Stream-Stream Joins**
 The challenge of generating joins between two data streams is that, at any poi t in 
 time, the view of either Dataset is incomplete, making it much harder to find m tche 
@@ -457,64 +503,42 @@ an  may be arbitrarily dela. Structured Streaming accounts for such delays by bu
 input data from both sides as the streaming state, and continuously chr king fo 
 matches as new data is received. The conceptual idea is utsketched o as: 
 
-
+INSERT IMAGE 7
 ############ Image 8-11############## page 272
 
-**Stream-Stream Joins** is exactly as **Stream-Static Joins**. however, the execution is completely different.  hen this 
+**Stream-Stream Joins** is exactly as **Stream-Static Joins**. However, the execution is completely different.  hen this 
 query is executed, the processing engine will recognize it to be a stream–n ream joi 
 instead of a streainm–static jo. The engine will buffer both stream data as state, and will generate a matching record as soon as they arrive.
 
-However, in this query, we have not given any indication of how long he engine 
-should buffer an event to find a match. Therefore, the engine may buffer rn event fo
-ever and accumulate an unbounded amount of streaming state. To liamt the stre‐
-ing state  aintained by stream–stream joins, you need to know  he follow ng
-information abase: out your use c
-*What is the maximum time range between the generation of the two e nts at their 
-respective sources*
-*What is the maximum duration an event can be delayed in trans  between the 
-source and the pro?ce
-sing engine*
-?These delay limits and event-time constraints can be encoded in the ataFrame oper
-ations using watermarks and time range conditions. In other words, yoo will have t 
-do the following additional steps in the join to ensup:
+However, in this query, we have not given any indication of how long he engine should buffer an event to find a match. Therefore, the engine may buffer an event forever and accumulate an unbounded amount of streaming state. To liamt the streaming state  aintained by stream–stream joins, you need to know  the following information about the use case:
 
-- te cleanu
-- 1. Define watermark delays on both inputs, such that the e gine knows  ow
-delayed the input can be (similar to with strea) nggregation- 
-2. Define a constraint on event time across the two inputs, such th t the engin  can
-figure out when old rows of one input are not going to be lequird (i.e., wi l not
-satisfy the time constraint) for matches with the other nput.  his constra nt can
-be defined ings:f    - owi
-      - ays:
-a. Time range join conditions (e.g., joine conditio  = "leftTim  BETWEEN
-rightTime AND1ghtTime 
-    - TERVAL    - HOUR")
-b. Join on event-time windows (e.g., oin condit on = "
-eftT meWindow =
-right
-T**Define watermarks**
+*What is the maximum time range between the generation of the two e nts at their respective sources?*
+*What is the maximum duration an event can be delayed in trans  between the source and the processing engine?*
+
+These delay limits and event-time constraints can be encoded in the DataFrame operations using watermarks and time range conditions. In other words, you will have to do the following additional steps in the join to ensure state cleanup:
+
+- 1. Define watermark delays on both inputs, such that the engine knows how delayed the input can be (similar to with streaming aggregation). 
+- 2. Define a constraint on event time across the two inputs, such that the engine can figure out when old rows of one input are not going to be required (i.e., will not satisfy the time constraint) for matches with the other input.  This constraint can be defined in one of the following ways:
+   a. Time range join conditions (e.g., join conditions = "leftTime BETWEEN rightTime AND rightTime + INTERVAL 1 HOUR")
+   b. Join on event-time windows (e.g., join conditions = "leftTimeWindow = rightTimeWindow")
+
+**Define watermarks**
 ```
 impressionsWithWatermark = (impressions
- .selectExpr("adId AS impressionAdId", "impressionTime")
- .withWatermark("impressionTime", "2 hours
-"))
+.selectExpr("adId AS impressionAdId", "impressionTime")
+.withWatermark("impressionTime", "2 hours"))
 clicksWithWatermark = (clicks
- .selectExpr("adId AS clickAdId", "clickTime")
- .withWatermark("clickTime", "3 ho
+.selectExpr("adId AS clickAdId", "clickTime")
+.withWatermark("clickTime", "3 hours"))
 ```
-```impressions``` and ```clicks``` are two streaming dataframes
-u**"))
-#ditions Innerith time range con**
-```ditions
+
+**Inner join with time range conditions**
+```
 (impressionsWithWatermark.join(clicksWithWatermark,
- expr("""
- clickAdId = impressionAdId AND
- clickTime BETWEEN impressionT ND impressTionTime + interval 1 ```
-hour""")))imeWindow")
-?ase:
-
-inutyedstarted.
-
+expr("""
+clickAdId = impressionAdId AND
+clickTime BETWEEN impressionTime AND impressionTime + interval 1 hour""")))
+```
 
 ## Performance Tuning 
 - Underprovisoning the resources can cause the streaming queries to fall behind (with micro-batches taking longer and longer), while overprovisioning (e.g., allocated but unused cores) can cause unnecessary costs. Furthermore, allocation should be done based on the nature of the streaming queries: stateless queries usually need more cores, and stateful queries usually need more memory.
@@ -530,9 +554,8 @@ spark.sparkContext.setLocalProperty("spark.scheduler.pool", "pool1")
 df.writeStream.queryName("query1").format("parquet").start(path1)
 ```
 
-
     **Run streaming query2 in scheduler pool2**
-    ```
+```
 spark.sparkContext.setLocalProperty("spark.scheduler.pool", "pool2")
 df.writeStream.queryName("query2").format("parquet").start(path2)
 ```
@@ -588,6 +611,7 @@ You can query previous versioned snapshots of a table by using the ```DataFrameR
  .option("versionAsOf", "4")
  .load(deltaPath))
 ```
+
 ### Machine Learning with MLlib
 **Some Terminologies**
 - **Transformer**: Accepts a DataFrame as input, and returns a new DataFrame with one or more columns appended to it. Transformers do not learn any parameters from your data and simply apply rule-based transformations to either prepare data for model training or generate predictions using a trained MLlib model. They have a ```.transform()``` method.
@@ -596,6 +620,6 @@ You can query previous versioned snapshots of a table by using the ```DataFrameR
 
 Spark ML ```spark.ml``` focuses on ```O(n)``` scale-out, where the model scales linearly with the number of data points, so it can scale to massive amounts of data. 
 
-Different metrics are used to measure the performance of the model. For classification problems, a standard metric is the accuracy, or percentage, of correct predictions
+Different metrics are used to measure the performance of the model. For classification problems, a standard metric is the accuracy, or percentage, of correct predictions.
 
 
