@@ -1,4 +1,5 @@
 # General PySpark Guide
+
 ###  Some important files and directores in Spark system 
 - **bin**: It contains scripts that employ to intract with Spark, including the Spark shells (Spark-SQL, PySpark, Spark-shell, etc)
 - **sbin**: Most of the scripts in this directory are administrative in purpose, for starting and stopping Spark components in the cluster in its various deployment modes.
@@ -43,7 +44,8 @@ where data from other partitions is read in, combined, and written to disk.  a c
 |join() | save()|
 
 ***Lazy transformations and eager actions***
-INSERT IMAGE1 ######### PICTURE ####### page 29 2-1 ###
+![](https://github.com/MishraSubash/PySparkCompleteGuide/blob/main/images/image1.png)
+
 **Nothing in a query plan is executed until an action is invoked**
 
 
@@ -120,8 +122,7 @@ The RDD is the most basic abstraction in Spark. There are three vital characteri
 - **Partitions**: partitions provide Spark the ability to split the work to parallelize computation on partitions across executors. In some cases—for example, reading from HDFS—Spark will use locality information to send work to executors close to the data. That way less data is transmitted over the network.
 - **Compute function**: It produces an ```Iterator[T]``` for the data that will be stored in the RDD. Spark has no knowledge of the specific data type in T. To Spark it’s an opaque object; it has no idea if you are accessing a column of a certain type within an object. Therefore, all Spark can do is serialize the opaque object as a series of bytes, without using any data compression techniques.
 
-### The DataFrame API
-### Page 71
+## The DataFrame API
 ### Basic Python data types in Spark 
 
 | Data type  | Value assigned in Python | API to instantiate   |
@@ -179,12 +180,12 @@ df = spark.read.csv('tips.csv', header = True, inferSchema = True)
 df.createOrReplaceTempView("tips_tbl")
 df.printSchema()
 ```
-Insert Image2
+![](https://github.com/MishraSubash/PySparkCompleteGuide/blob/main/images/image2.png)
 ```
 # Let's try sql to query the tips data 
 spark.sql("""SELECT * FROM tips_tbl""").show(5)
 ```
-Insert image3
+![](https://github.com/MishraSubash/PySparkCompleteGuide/blob/main/images/image3.png)
 ```
 # With Group by 
 spark.sql("""SELECT sex, SUM(total_bill) AS Bill
@@ -193,7 +194,7 @@ spark.sql("""SELECT sex, SUM(total_bill) AS Bill
             GROUP BY sex
             """).show()
 ```
-INSERT IMage 4
+![](https://github.com/MishraSubash/PySparkCompleteGuide/blob/main/images/image4.png)
 
 ```
 # Little bit advance query 
@@ -211,8 +212,7 @@ spark.sql("""SELECT sex as Gender, day,
             GROUP BY sex, size, day
             ORDER BY day ASC""").show(5)
 ```
-INSERT Image5
-########### Add More Files #### 
+![](https://github.com/MishraSubash/PySparkCompleteGuide/blob/main/images/image5.png)
 
 ### SQL Tables and Views
 Spark allows you to create two types of tables
@@ -240,10 +240,8 @@ Writing a DataFrame to a SQL table is as easy as writing to a file—just use ``
 | |```lead()``` | ```lead()```|
 
 ### Structured Streaming 
-## Page 232
-Stream processing is defined as the continuous processing of endless streams of data.
-With the advent of big data, stream processing systems transitioned from single-node
-processing engines to multiple-node, distributed processing engines.
+
+Stream processing is defined as the continuous processing of endless streams of data. With the advent of big data, stream processing systems transitioned from single-node processing engines to multiple-node, distributed processing engines.
 
 **Advantages of DStreams**
 - Spark’s agile task scheduling can very quickly and efficiently recover from failures and straggler executors by rescheduling one or more copies of the tasks on any of the other executors.
@@ -337,8 +335,7 @@ streamingQuery = (counts
 streamingQuery.awaitTermination()
 ```
 ### Under the Hood of an Active Streaming Query
-INSERT IMAGE 6
-######### pic 8-9 page 244 ####
+![](https://github.com/MishraSubash/PySparkCompleteGuide/blob/main/images/image6.png)
 
 *Under the hoold of Structured Streaming, it uses Spark SQL to execute the data. As such, the full power of Spark SQL's hyperoptimized execution engine is utilized to maximize the stream processing throughput, providing key performance advantages.* 
 
@@ -503,8 +500,7 @@ an  may be arbitrarily dela. Structured Streaming accounts for such delays by bu
 input data from both sides as the streaming state, and continuously chr king fo 
 matches as new data is received. The conceptual idea is utsketched o as: 
 
-INSERT IMAGE 7
-############ Image 8-11############## page 272
+![](https://github.com/MishraSubash/PySparkCompleteGuide/blob/main/images/image7.png)
 
 **Stream-Stream Joins** is exactly as **Stream-Static Joins**. However, the execution is completely different.  hen this 
 query is executed, the processing engine will recognize it to be a stream–n ream joi 
@@ -621,5 +617,7 @@ You can query previous versioned snapshots of a table by using the ```DataFrameR
 Spark ML ```spark.ml``` focuses on ```O(n)``` scale-out, where the model scales linearly with the number of data points, so it can scale to massive amounts of data. 
 
 Different metrics are used to measure the performance of the model. For classification problems, a standard metric is the accuracy, or percentage, of correct predictions.
+
+[Comprehensive PySpark Machine Learning(MLib) Code](https://github.com/MishraSubash/PySparkCompleteGuide/blob/main/PySpark-MLib-Code.ipynb)
 
 
