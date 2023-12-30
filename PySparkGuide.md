@@ -44,10 +44,11 @@ where data from other partitions is read in, combined, and written to disk.  a c
 |join() | save()|
 
 ***Lazy transformations and eager actions***
+
 ![](https://github.com/MishraSubash/PySparkCompleteGuide/blob/main/images/image1.png)
 
-**Nothing in a query plan is executed until an action is invoked**
 
+**Nothing in a query plan is executed until an action is invoked**
 
 ## Apache Spark’s Structured APIs
 **What is an RDD?**
