@@ -397,6 +397,205 @@ for aggregations on streaming DataFrames.***
 
 mean("value"))s))es())s)))
 
+Multiple aggregations can be computed together
+```from pyspark.sql.functions import * 
+multipleAggs = (sensorReadings
+ .groupBy("sensorId")
+ .agg(count("*"), mean("value").alias("baselineValue"),
+ collect_set("errorCode").alias("allErrorCodes")))
+```
+### Aggregations with Event-Time Windows
+In many cases, rather than running aggregations over the whole stream, aggregations over data bucketed by time windows. 
+```
+from pyspark.sql.functions import *
+(sensorReadings
+ .groupBy("sensorId", window("eventTime", "5 minute"))
+ .count())
+```
+Use case: Continuing with our sensor example, say each sensor is expected to send at most one reading per minute and we want to detect if any sensor is reporting an unusually high number of times in each interval. This will help in detect anomalies. 
+```
+(sensorReadings
+ .groupBy("sensorId", window("eventTime", "10 minute", "5 minute"))
+ .count())
+```
+Note: compute counts corresponding to 10-minute windows sliding every 5 minutes. 
 
+### Handling late data with watermarks
+A watermark is defined as a moving threshold in event time that trails behind the maximum event time seen by the query in the processed data. The trailing gap, known as the watermark delay, defines how long the engine will wait for late data to arrive. By knowing the point at which no more data will arrive for a given group, the engine can automatically finalize the aggregates of certain groups and drop them from the state. This limits the total amount of state that the engine has to maintain to compute the results of the query. For example, suppose you know that your sensor data will not be late by more than 10 minutes. Then you can set the watermark as follows:
+```
+(sensorReadings
+ .withWatermark("eventTime", "10 minutes")
+ .groupBy("sensorId", window("eventTime", "10 minutes", "5 minutes"))
+ .mean("value"))
+```
+
+### Streaming Joins
+page 270
+Structured Streaming supports joining a streaming Dataset with another static or streaming Dataset. Watermarks can be used to limit the state stored for stateful  join (inner, outer, etc)
+
+**Stream-Static Joins**
+- Stream–static joins are stateless operations, and therefore do not require any kind  of watermarking.- • The static DataFrame is read repeatedly while joining with the streaming data for 
+every micro-batch, so you can cache the static DataFrame to speed up the read- - • If the underlying data in the data source on which the static DataFrame w s
+defined changes, whether those changes are seen by the streaming query de|  47
+on the specific behavior of the data source. For example, if the static Da aF ame
+was defined on files, then changes to those files (e.g., appen s) will not b  p cked
+up until the streaming queready.y is r
+
+Read static data 
+``` staticdata = spark.read...```
+Read Streamming data 
+```streamdata = spark.readstream ...```
+Joining data 
+```
+mergedata = streamdata.join(staticdata , "id")
+```
+**Stream-Stream Joins**
+The challenge of generating joins between two data streams is that, at any poi t in 
+time, the view of either Dataset is incomplete, making it much harder to find m tche 
+between inputs. The matching events from the two streams may arrive in an  ord r
+an  may be arbitrarily dela. Structured Streaming accounts for such delays by buffe ing the
+input data from both sides as the streaming state, and continuously chr king fo 
+matches as new data is received. The conceptual idea is utsketched o as: 
+
+
+############ Image 8-11############## page 272
+
+**Stream-Stream Joins** is exactly as **Stream-Static Joins**. however, the execution is completely different.  hen this 
+query is executed, the processing engine will recognize it to be a stream–n ream joi 
+instead of a streainm–static jo. The engine will buffer both stream data as state, and will generate a matching record as soon as they arrive.
+
+However, in this query, we have not given any indication of how long he engine 
+should buffer an event to find a match. Therefore, the engine may buffer rn event fo
+ever and accumulate an unbounded amount of streaming state. To liamt the stre‐
+ing state  aintained by stream–stream joins, you need to know  he follow ng
+information abase: out your use c
+*What is the maximum time range between the generation of the two e nts at their 
+respective sources*
+*What is the maximum duration an event can be delayed in trans  between the 
+source and the pro?ce
+sing engine*
+?These delay limits and event-time constraints can be encoded in the ataFrame oper
+ations using watermarks and time range conditions. In other words, yoo will have t 
+do the following additional steps in the join to ensup:
+
+- te cleanu
+- 1. Define watermark delays on both inputs, such that the e gine knows  ow
+delayed the input can be (similar to with strea) nggregation- 
+2. Define a constraint on event time across the two inputs, such th t the engin  can
+figure out when old rows of one input are not going to be lequird (i.e., wi l not
+satisfy the time constraint) for matches with the other nput.  his constra nt can
+be defined ings:f    - owi
+      - ays:
+a. Time range join conditions (e.g., joine conditio  = "leftTim  BETWEEN
+rightTime AND1ghtTime 
+    - TERVAL    - HOUR")
+b. Join on event-time windows (e.g., oin condit on = "
+eftT meWindow =
+right
+T**Define watermarks**
+```
+impressionsWithWatermark = (impressions
+ .selectExpr("adId AS impressionAdId", "impressionTime")
+ .withWatermark("impressionTime", "2 hours
+"))
+clicksWithWatermark = (clicks
+ .selectExpr("adId AS clickAdId", "clickTime")
+ .withWatermark("clickTime", "3 ho
+```
+```impressions``` and ```clicks``` are two streaming dataframes
+u**"))
+#ditions Innerith time range con**
+```ditions
+(impressionsWithWatermark.join(clicksWithWatermark,
+ expr("""
+ clickAdId = impressionAdId AND
+ clickTime BETWEEN impressionT ND impressTionTime + interval 1 ```
+hour""")))imeWindow")
+?ase:
+
+inutyedstarted.
+
+
+## Performance Tuning 
+- Underprovisoning the resources can cause the streaming queries to fall behind (with micro-batches taking longer and longer), while overprovisioning (e.g., allocated but unused cores) can cause unnecessary costs. Furthermore, allocation should be done based on the nature of the streaming queries: stateless queries usually need more cores, and stateful queries usually need more memory.
+- For Structured Streaming queries, the number of shuffle partitions usually needs to be set much lower than for most batch queries—dividing the computation too much increases overheads and reduces throughput.
+- Setting the limit too low can cause the query to underutilize allocated resources and fall behind the input rate.
+- Multiple streaming queries in the same Spark application: 
+    - Running multiple streaming queries in the same SparkContext or SparkSession can lead to fine-grained resource sharing. Executing too many continuosuly running queries will consumes resources in the Spark driver. So, Hitting those limits can either bottleneck the task scheduling (i.e., underutilizing the executors) or exceed memory limits. 
+    - ensuring fairer resource allocation between queries in the same context by setting them to run in separate scheduler pools. Set the ```SparkContext```’s thread-local property spark.scheduler.pool to a different string value for each stream:
+    
+    **Run streaming query1 in scheduler pool1**
+```
+spark.sparkContext.setLocalProperty("spark.scheduler.pool", "pool1")
+df.writeStream.queryName("query1").format("parquet").start(path1)
+```
+
+
+    **Run streaming query2 in scheduler pool2**
+    ```
+spark.sparkContext.setLocalProperty("spark.scheduler.pool", "pool2")
+df.writeStream.queryName("query2").format("parquet").start(path2)
+```
+
+## Building Reliable Data Lakes with Apache Spark
+**The Importance of an Optimal Storage Solution**
+- Scalability and performance
+- Transaction support
+- Support for diverse data formats
+- Support for diverse workloads
+- Openness
+
+**Delta Lake**
+
+It is an open data storage format that provides transactional guarantees and enables schema enforcement and evolution. It also provides several other interesting features, some of which are unique.
+
+Delta Lake supports:
+- Streaming reading from and writing to tables using Structured Streaming sources and sinks
+- Update, delete, and merge (for upserts) operations, even in Java, Scala, and Python APIs
+- Schema evolution either by explicitly altering the table schema or by implicitly merging a DataFrame’s schema to the table’s during the DataFrame’s write. (In fact, the merge operation in Delta Lake supports advanced syntax for conditional updates/inserts/deletes, updating all columns together, etc., as you’ll see later in the chapter.)
+- Time travel, which allows you to query a specific table snapshot by ID or by timestamp
+- Rollback to previous versions to correct errors
+- Serializable isolation between multiple concurrent writers performing any SQL, batch, or streaming operations. 
+
+**Delta Lake has a few additional advantages over traditional formats like JSON, Parquet, or ORC:**
+- It allows writes from both batch and streaming jobs into the same table
+- It allows multiple streaming jobs to append data to the same table
+- It provides ACID guarantees even under concurrent writes
+
+Evolving Schemas to Accommodate Changing Data
+In our world of ever-changing data, it is possible that we might want to add this new column to the table. This new column can be explicitly added by setting the option ```mergeSchema``` to ```true```:
+```
+(loanUpdates.write.format("delta").mode("append")
+ .option("mergeSchema", "true")
+ .save(deltaPath))
+ ```
+With this, the column closed will be added to the table schema, and new data will be appended. When existing rows are read, the value of the new column is considered as NULL. In Spark 3.0, you can also use the SQL DDL command ALTER TABLE to add and modify columns.
+
+**Auditing Data Changes with Operation History**
+All of the changes to your Delta Lake table are recorded as commits in the table’s transaction log. As you write into a Delta Lake table or directory, every operation is automatically versioned. You can query the table’s operation history as noted in the following code snippet:
+```
+deltaTable.history().select("cols", "col2").show((truncate=False))
+```
+
+**Querying Previous Snapshots of a Table with Time Travel**
+You can query previous versioned snapshots of a table by using the ```DataFrameReader``` options ```versionAsOf``` and ```timestampAsOf```. Here are a examples:
+```
+(spark.read
+ .format("delta")
+ .option("timestampAsOf", "2020-01-01") # timestamp after table creation
+ .load(deltaPath))
+(spark.read.format("delta")
+ .option("versionAsOf", "4")
+ .load(deltaPath))
+```
+### Machine Learning with MLlib
+**Some Terminologies**
+- **Transformer**: Accepts a DataFrame as input, and returns a new DataFrame with one or more columns appended to it. Transformers do not learn any parameters from your data and simply apply rule-based transformations to either prepare data for model training or generate predictions using a trained MLlib model. They have a ```.transform()``` method.
+- **Estimator**: Learns (or “fits”) parameters from your DataFrame via a ```.fit()``` method and returns a Model, which is a transformer.
+- **Pipeline**: Organizes a series of transformers and estimators into a single model. While pipelines themselves are estimators, the output of ```pipeline.fit()``` returns a PipelineModel, a transformer.
+
+Spark ML ```spark.ml``` focuses on ```O(n)``` scale-out, where the model scales linearly with the number of data points, so it can scale to massive amounts of data. 
+
+Different metrics are used to measure the performance of the model. For classification problems, a standard metric is the accuracy, or percentage, of correct predictions
 
 
